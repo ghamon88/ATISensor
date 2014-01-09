@@ -1,0 +1,99 @@
+#include "ATISensor-component.hpp"
+#include <rtt/Component.hpp>
+#include <iostream>
+
+
+ATISensor::ATISensor(std::string const& name) : TaskContext(name){
+  //this->addPort("FTData", oport_FTData);
+  std::cout << "ATISensor constructed !" <<std::endl;
+}
+
+bool ATISensor::configureHook(){
+
+	struct sockaddr_in addr;	/* Address of Net F/T. */
+	struct hostent *he;		/* Host entry for Net F/T. */
+	int err;			/* Error status of operations. */
+	AXES[] = { "Fx", "Fy", "Fz", "Tx", "Ty", "Tz" };/* The names of the force and torque axes. */
+
+	/*if ( 2 > argc )
+	{
+		std::cout << "Usage: "<< argv[0] << " IPADDRESS"  <<std::endl;
+		return -1;
+	}*/
+
+	/* Calculate number of samples, command code, and open socket here. */
+	socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (socketHandle == -1) {
+		std::cout << "Socket could not be opened" <<std::endl;
+		exit(1);
+	}
+	
+	*(uint16*)&request[0] = htons(0x1234); /* standard header. */
+	*(uint16*)&request[2] = htons(COMMAND); /* per table 9.1 in Net F/T user manual. */
+	*(unsigned int*)&request[4] = htonl(NUM_SAMPLES); /* see section 9.1 in Net F/T user manual. */
+	
+	/* Sending the request. */
+	he = gethostbyname(argv[1]);
+	memcpy(&addr.sin_addr, he->h_addr_list[0], he->h_length);
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(PORT);
+	
+	err = connect( socketHandle, (struct sockaddr *)&addr, sizeof(addr) );
+	if (err == -1) {
+		exit(2);
+	}
+
+
+  std::cout << "ATISensor configured !" <<std::endl;
+  return true;
+}
+
+bool ATISensor::startHook(){
+  send( socketHandle, (const char *)request, 8, 0 );
+  std::cout << "ATISensor started !" <<std::endl;
+  return true;
+}
+
+void ATISensor::updateHook(){
+        int i; /* Generic loop/array index. */
+  	/* Receiving the response. */
+	recv( socketHandle, (char *)response, 36, 0 );
+	resp.rdt_sequence = ntohl(*(unsigned int*)&response[0]);
+	resp.ft_sequence = ntohl(*(unsigned int*)&response[4]);
+	resp.status = ntohl(*(unsigned int*)&response[8]);
+	for( i = 0; i < 6; i++ ) {
+		resp.FTData[i] = ntohl(*(int*)&response[12 + i * 4]);
+	}
+
+	/* Output the response data. REMPLACER PAR UN PORT OUT OROCOS*/
+	//printf( "Status: 0x%08x\n", resp.status );
+	/*for (i =0;i < 6;i++) {
+		printf("%s: %d\n", AXES[i], resp.FTData[i]);
+	}*/
+	
+	//oport_FTData.write(resp.FTData);
+  std::cout << "ATISensor executes updateHook !" <<std::endl;
+}
+
+void ATISensor::stopHook() {
+  close(socketHandle);
+  std::cout << "ATISensor executes stopping !" <<std::endl;
+}
+
+void ATISensor::cleanupHook() {
+  std::cout << "ATISensor cleaning up !" <<std::endl;
+}
+
+/*
+ * Using this macro, only one component may live
+ * in one library *and* you may *not* link this library
+ * with another component library. Use
+ * ORO_CREATE_COMPONENT_TYPE()
+ * ORO_LIST_COMPONENT_TYPE(ATISensor)
+ * In case you want to link with another library that
+ * already contains components.
+ *
+ * If you have put your component class
+ * in a namespace, don't forget to add it here too:
+ */
+ORO_CREATE_COMPONENT(ATISensor)
