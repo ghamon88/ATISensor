@@ -1,0 +1,3 @@
+ATISensor Orocos Component
+Get data from the 6 axis Force/Torque ATI Gamma Sensor
+Provides them through an output port
