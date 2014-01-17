@@ -1,7 +1,10 @@
 #include "ATISensor-component.hpp"
 #include <rtt/Component.hpp>
 #include <iostream>
+#include <fcntl.h>
+using namespace std;
 
+int recv_timeout(int s, int timeout);
 
 ATISensor::ATISensor(std::string const& name) : TaskContext(name){
   this->addPort("FTData", oport_FTData);
@@ -11,17 +14,14 @@ ATISensor::ATISensor(std::string const& name) : TaskContext(name){
 bool ATISensor::configureHook(){
 
 	struct sockaddr_in addr;	/* Address of Net F/T. */
-	struct hostent *he;		/* Host entry for Net F/T. */
 	int err;			/* Error status of operations. */
-	char ip[4];
-	char requestConf[]="GET /netftapi2.xml?cfgcpf HTTP/1.1\r\nHOST:192.168.1.1\r\n\r\n"; //diviseurs
-	char requestConf2[]="GET /netftapi2.xml?cfgcpt HTTP/1.1\r\nHOST:192.168.1.1\r\n\r\n";
-	char* responseConf;
+	char requestConf[]="GET /netftapi2.xml?index=0 HTTP/1.1\r\nHOST:192.168.1.1\r\n\r\n"; //diviseurs
+	char responseConf[1000];
+	std::string resp_cfgcpf;
+	char XmlString[5000];
+	memset(XmlString, 0,5000);
 
-	ip[0]=char(192);
-	ip[1]=char(168);
-	ip[2]=char(1);
-	ip[3]=char(100);
+	int i=0;	
 
 	AXES[0] = "Fx";
 	AXES[1] = "Fy";
@@ -32,39 +32,74 @@ bool ATISensor::configureHook(){
 
 
 	/* Calculate number of samples, command code, and open socket here. */
-	socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	//socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	socketHandle = socket(AF_INET, SOCK_STREAM, 0);
 	if (socketHandle == -1) {
 		std::cout << "Socket could not be opened" <<std::endl;
 		exit(1);
 	}
 	
+
 	*(unsigned short*)&request[0] = htons(0x1234); /* standard header. */
 	*(unsigned short*)&request[2] = htons(COMMAND); /* per table 9.1 in Net F/T user manual. */
 	*(unsigned int*)&request[4] = htonl(NUM_SAMPLES); /* see section 9.1 in Net F/T user manual. */
+
 	
 	/* Sending the request. */
-	//he = gethostbyname("192.168.1.100");
-	he->h_length=4;
-	he->h_addr_list[0]=ip;
-	memcpy(&addr.sin_addr, he->h_addr_list[0], he->h_length);
+	std::cout << "avant length" <<std::endl;
+	addr.sin_addr.s_addr=inet_addr("192.168.1.1");
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(PORT);
-	
+	addr.sin_port = htons(80);
+
+	std::cout << addr.sin_port <<std::endl;
+
+	std::cout << "avant connect" <<std::endl;
+
 	err = connect( socketHandle, (struct sockaddr *)&addr, sizeof(addr) );
 	if (err == -1) {
 		exit(2);
 	}
+	
+	std::cout << (const char *)requestConf <<std::endl;
+	int retour=send( socketHandle, (const char *)requestConf, strlen(requestConf), 0 );
+	std::cout<< "retour = "<< retour << std::endl; 
 
-	send( socketHandle, (const char *)requestConf, strlen(requestConf), 0 ); 
-	recv( socketHandle, (char *)responseConf, 36, 0 ); // 36?...
-	cfgcpf=atoi(responseConf);
+	//int total_recv = recv_timeout(socketHandle, 2);
+	for (int i=1; i<6;i++){
+	memset(responseConf, 0,1000);
+	recv( socketHandle, (char *)responseConf, 1000, 0 ); 
+	strcat(XmlString, responseConf);
+	}
 
-	send( socketHandle, (const char *)requestConf2, strlen(requestConf2), 0 ); 
-	recv( socketHandle, (char *)responseConf, 36, 0 );
-	cfgcpt=atoi(responseConf);
+	std::cout << "XmlString = " <<(const char *)XmlString <<std::endl;
+
+	TiXmlDocument doc;
+	std::cout << "avant parse" <<std::endl;
+	doc.Parse((const char*)XmlString, 0, TIXML_ENCODING_UTF8);
+	doc.Print();
+	std::cout << "avant docHandle" <<std::endl;
+	TiXmlHandle docHandle(&doc);
+	std::cout << "avant firstchild" <<std::endl;
+
+	/* cfgcpf */
+	TiXmlElement* child = docHandle.FirstChild("netft").FirstChild("cfgcpf").ToElement();
+	//if(!child) return 0;
+	std::cout << "avant attribute" <<std::endl;
+	resp_cfgcpf = child->GetText();
+	std::cout << resp_cfgcpf <<std::endl;
+	//cfgcpf=atoi(responseConf);
+	
+	/* cfgcpt */
+	/*TiXmlElement* child = docHandle.FirstChild("netft").FirstChild("cfgcpt").ToElement();
+	//if(!child) return 0;
+	std::cout << "avant attribute" <<std::endl;
+	resp_cfgcpt = child->GetText();
+	std::cout << resp_cfgcpt <<std::endl;
+	//cfgcpt=atoi(resp_cfgcpt);*/
 
 	//Plutôt utiliser un port d'entrée pour les valeurs de calibrations si celles-ci sont changées en dynamique
-
+  std::cout << "cfgcpf = " << cfgcpf <<std::endl;
+  std::cout << "cfgcpt = " << cfgcpt <<std::endl;
   std::cout << "ATISensor configured !" <<std::endl;
   return true;
 }
@@ -86,7 +121,7 @@ void ATISensor::updateHook(){
 		resp.FTData[i] = ntohl(*(int*)&response[12 + i * 4]);
 	}
 	
-	/* Output the response data
+	/* Output the response data */
 	//printf( "Status: 0x%08x\n", resp.status );
 	/*for (i =0;i < 6;i++) {
 		printf("%s: %d\n", AXES[i], resp.FTData[i]);
@@ -111,6 +146,63 @@ void ATISensor::stopHook() {
 
 void ATISensor::cleanupHook() {
   std::cout << "ATISensor cleaning up !" <<std::endl;
+}
+
+int recv_timeout(int s , int timeout)
+{
+    int size_recv , total_size= 0;
+    struct timeval begin , now;
+    char chunk[1000];
+    double timediff;
+    char XmlString[5000];
+	
+    strcpy(XmlString,"\O");
+     
+    //make socket non blocking
+    fcntl(s, F_SETFL, O_NONBLOCK);
+     
+    //beginning time
+    gettimeofday(&begin , NULL);
+     
+    while(1)
+    {
+	memset(chunk ,0 , 1000);  //clear the variable
+        gettimeofday(&now , NULL);
+         
+        //time elapsed in seconds
+        timediff = (now.tv_sec - begin.tv_sec) + 1e-6 * (now.tv_usec - begin.tv_usec);
+         
+        //if you got some data, then break after timeout
+        if( total_size > 0 && timediff > timeout )
+        {
+            break;
+        }
+         
+        //if you got no data at all, wait a little longer, twice the timeout
+        else if( timediff > timeout*2)
+        {
+            break;
+        }
+         
+        
+        if((size_recv =  recv(s , chunk , 1000 , 0) ) < 0)
+        {
+            //if nothing was received then we want to wait a little before trying again, 0.1 seconds
+            usleep(500000);
+        }
+        else
+        {
+		std::cout<< "chunk = "<< chunk <<std::endl;
+	   // c'est là qu'on change --> concatener ce qu'il y a dans chunk avec une string (5000) , remplacer chunk par des \O
+            total_size += size_recv;
+	    strcat(XmlString,chunk);
+            //printf("%s" , chunk);
+            //reset beginning time
+            gettimeofday(&begin , NULL);
+        }
+    }
+    std::cout<< "XmlString = "<< XmlString <<std::endl;
+    return total_size;
 }
 
 /*
