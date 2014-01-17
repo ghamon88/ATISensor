@@ -7,7 +7,12 @@ using namespace std;
 int recv_timeout(int s, int timeout);
 
 ATISensor::ATISensor(std::string const& name) : TaskContext(name){
-  this->addPort("FTData", oport_FTData);
+  this->addPort("FTData_Fx", oport_FTData_Fx);
+  this->addPort("FTData_Fy", oport_FTData_Fy);
+  this->addPort("FTData_Fz", oport_FTData_Fz);
+  this->addPort("FTData_Tx", oport_FTData_Tx);
+  this->addPort("FTData_Ty", oport_FTData_Ty);
+  this->addPort("FTData_Tz", oport_FTData_Tz);
   std::cout << "ATISensor constructed !" <<std::endl;
 }
 
@@ -28,11 +33,12 @@ bool ATISensor::configureHook(){
 	AXES[2] = "Fz";
 	AXES[3] = "Tx";
 	AXES[4] = "Ty";
-	AXES[5] = "Tz";/* The names of the force and torque axes. */
+	AXES[5] = "Tz";								/* The names of the force and torque axes. */
 
 
 	/* Calculate number of samples, command code, and open socket here. */
 	//socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	
 	socketHandle = socket(AF_INET, SOCK_STREAM, 0);
 	if (socketHandle == -1) {
 		std::cout << "Socket could not be opened" <<std::endl;
@@ -40,9 +46,9 @@ bool ATISensor::configureHook(){
 	}
 	
 
-	*(unsigned short*)&request[0] = htons(0x1234); /* standard header. */
-	*(unsigned short*)&request[2] = htons(COMMAND); /* per table 9.1 in Net F/T user manual. */
-	*(unsigned int*)&request[4] = htonl(NUM_SAMPLES); /* see section 9.1 in Net F/T user manual. */
+	*(unsigned short*)&request[0] = htons(0x1234); // standard header. 
+	*(unsigned short*)&request[2] = htons(COMMAND); // per table 9.1 in Net F/T user manual. 
+	*(unsigned int*)&request[4] = htonl(NUM_SAMPLES); // see section 9.1 in Net F/T user manual. 			
 
 	
 	/* Sending the request. */
@@ -58,7 +64,7 @@ bool ATISensor::configureHook(){
 	err = connect( socketHandle, (struct sockaddr *)&addr, sizeof(addr) );
 	if (err == -1) {
 		exit(2);
-	}
+	}							
 	
 	std::cout << (const char *)requestConf <<std::endl;
 	int retour=send( socketHandle, (const char *)requestConf, strlen(requestConf), 0 );
@@ -71,22 +77,22 @@ bool ATISensor::configureHook(){
 	strcat(XmlString, responseConf);
 	}
 
-	std::cout << "XmlString = " <<(const char *)XmlString <<std::endl;
+	std::cout << "XmlString = " <<(const char *)XmlString <<std::endl;	
 
-	TiXmlDocument doc;
+/*	TiXmlDocument doc;
 	std::cout << "avant parse" <<std::endl;
 	doc.Parse((const char*)XmlString, 0, TIXML_ENCODING_UTF8);
 	doc.Print();
 	std::cout << "avant docHandle" <<std::endl;
 	TiXmlHandle docHandle(&doc);
-	std::cout << "avant firstchild" <<std::endl;
-
+	std::cout << "avant firstchild" <<std::endl;			*/		
+	
 	/* cfgcpf */
-	TiXmlElement* child = docHandle.FirstChild("netft").FirstChild("cfgcpf").ToElement();
+//	TiXmlElement* child = docHandle.FirstChild("netft").FirstChild("cfgcpf").ToElement();
 	//if(!child) return 0;
-	std::cout << "avant attribute" <<std::endl;
-	resp_cfgcpf = child->GetText();
-	std::cout << resp_cfgcpf <<std::endl;
+//	std::cout << "avant attribute" <<std::endl;
+	//resp_cfgcpf = child->GetText();
+	//std::cout << resp_cfgcpf <<std::endl;
 	//cfgcpf=atoi(responseConf);
 	
 	/* cfgcpt */
@@ -100,6 +106,20 @@ bool ATISensor::configureHook(){
 	//Plutôt utiliser un port d'entrée pour les valeurs de calibrations si celles-ci sont changées en dynamique
   std::cout << "cfgcpf = " << cfgcpf <<std::endl;
   std::cout << "cfgcpt = " << cfgcpt <<std::endl;
+	
+	close(socketHandle);
+	shutdown(socketHandle,2);
+	socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (socketHandle == -1) {
+		std::cout << "Socket could not be opened" <<std::endl;
+		exit(1);
+	}
+	addr.sin_port = htons(PORT);
+	err = connect( socketHandle, (struct sockaddr *)&addr, sizeof(addr) );
+	if (err == -1) {
+		exit(2);
+	}
+	
   std::cout << "ATISensor configured !" <<std::endl;
   return true;
 }
@@ -126,7 +146,8 @@ void ATISensor::updateHook(){
 	/*for (i =0;i < 6;i++) {
 		printf("%s: %d\n", AXES[i], resp.FTData[i]);
 	}*/
-	
+	cfgcpf=1;
+	cfgcpt=1;
 	resp.FTData[0]/=cfgcpf;
 	resp.FTData[1]/=cfgcpf;
 	resp.FTData[2]/=cfgcpf;
@@ -135,8 +156,20 @@ void ATISensor::updateHook(){
 	resp.FTData[4]/=cfgcpt;
 	resp.FTData[5]/=cfgcpt;
 
-	oport_FTData.write(resp.FTData);
-  std::cout << "ATISensor executes updateHook !" <<std::endl;
+	oport_FTData_Fx.write(resp.FTData[0]);
+	oport_FTData_Fy.write(resp.FTData[1]);
+	oport_FTData_Fz.write(resp.FTData[2]);
+	oport_FTData_Tx.write(resp.FTData[3]);
+	oport_FTData_Ty.write(resp.FTData[4]);
+	oport_FTData_Tz.write(resp.FTData[5]);
+	/*std::cout << "Fx = " <<resp.FTData[0]<<std::endl;
+	std::cout << "Fy = " <<resp.FTData[1]<<std::endl;
+	std::cout << "Fz = " <<resp.FTData[2]<<std::endl;
+	std::cout << "Tx = " <<resp.FTData[3]<<std::endl;
+	std::cout << "Ty = " <<resp.FTData[4]<<std::endl;
+	std::cout << "Tz = " <<resp.FTData[5]<<std::endl;
+
+  std::cout << "ATISensor executes updateHook !" <<std::endl;*/
 }
 
 void ATISensor::stopHook() {
@@ -145,6 +178,8 @@ void ATISensor::stopHook() {
 }
 
 void ATISensor::cleanupHook() {
+  shutdown(socketHandle,2);
+  std::cout << "shutdown ok" <<std::endl;
   std::cout << "ATISensor cleaning up !" <<std::endl;
 }
 

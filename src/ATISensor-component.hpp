@@ -37,7 +37,13 @@ class ATISensor : public RTT::TaskContext{
 	int cfgcpt;
 	int cfgcpf;
 
-	RTT::OutputPort< int* > oport_FTData;
+	RTT::OutputPort< int > oport_FTData_Fx;
+	RTT::OutputPort< int > oport_FTData_Fy;
+	RTT::OutputPort< int > oport_FTData_Fz;
+	RTT::OutputPort< int > oport_FTData_Tx;
+	RTT::OutputPort< int > oport_FTData_Ty;
+	RTT::OutputPort< int > oport_FTData_Tz;
+
 	int socketHandle;	/* Handle to UDP socket used to communicate with Net F/T. */
         unsigned char request[8];	/* The request data sent to the Net F/T. */
 	RESPONSE resp;		/* The structured response received from the Net F/T. */
