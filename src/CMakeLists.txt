@@ -11,17 +11,17 @@
 # and installs in the directory lib/orocos/ATISensor/
 #
 include_directories(../tinyxml)
-
+include_directories(../happyhttp)
 
 add_library(tinyxml ../tinyxml/tinyxml.cpp)
 add_library(tinyxmlparser ../tinyxml/tinyxmlparser.cpp)
 add_library(tinyxmlerror ../tinyxml/tinyxmlerror.cpp)
 add_library(tinystr ../tinyxml/tinystr.cpp)
-
+add_library(happyhttp ../happyhttp/happyhttp.cpp)
 
 orocos_component(ATISensor ATISensor-component.hpp ATISensor-component.cpp) # ...you may add multiple source files
 
-target_link_libraries(ATISensor tinyxml tinyxmlparser tinyxmlerror tinystr)
+target_link_libraries(ATISensor tinyxml tinyxmlparser tinyxmlerror tinystr happyhttp)
 #
 # You may add multiple orocos_component statements.
 

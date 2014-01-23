@@ -23,6 +23,7 @@ endif()
 include( ${OROCOS-RTT_USE_FILE_PATH}/UseOROCOS-RTT.cmake )
 
 #include_directories(tinyxml)
+#include_directories(happyhttp)
 
 # Rest of the configuration is in src/
 add_subdirectory( src )
