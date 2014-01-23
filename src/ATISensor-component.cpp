@@ -173,6 +173,8 @@ void ATISensor::updateHook(){
 }
 
 void ATISensor::stopHook() {
+  *(unsigned short*)&request[2] = htons(0); // per table 9.1 in Net F/T user manual. 
+  send( socketHandle, (const char *)request, 8, 0 );
   close(socketHandle);
   std::cout << "ATISensor executes stopping !" <<std::endl;
 }
