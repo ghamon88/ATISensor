@@ -8,9 +8,9 @@
 FILE* fichier;
 int compteur = 0;
 
-void Begin( const happyhttp::Response* r, void* userdata );
-void Data( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n );
-void Complete( const happyhttp::Response* r, void* userdata );
+void onBegin( const happyhttp::Response* r, void* userdata );
+void onData( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n );
+void onComplete( const happyhttp::Response* r, void* userdata );
 
 ATISensor::ATISensor(std::string const& name) : TaskContext(name){
   this->addPort("FTData_Fx", oport_FTData_Fx);
@@ -24,18 +24,13 @@ ATISensor::ATISensor(std::string const& name) : TaskContext(name){
 
 bool ATISensor::configureHook(){
 
-	
-	const char* resp_cfgcpf;
-	const char* resp_cfgcpt;
-	resp_cfgcpf=(char*)malloc(10*sizeof(char));
-	resp_cfgcpt=(char*)malloc(10*sizeof(char));
-
-	AXES[0] = "Fx";
+	/* The names of the force and torque axes for display */
+	/*AXES[0] = "Fx";
 	AXES[1] = "Fy";
 	AXES[2] = "Fz";
 	AXES[3] = "Tx";
 	AXES[4] = "Ty";
-	AXES[5] = "Tz";			/* The names of the force and torque axes. */
+	AXES[5] = "Tz";*/			
 
 	*(unsigned short*)&request[0] = htons(0x1234); // standard header. 
 	*(unsigned short*)&request[2] = htons(COMMAND); // per table 9.1 in Net F/T user manual. 
@@ -45,7 +40,7 @@ bool ATISensor::configureHook(){
 
 	fichier=fopen("/home/kuka/src/groovy_workspace/orocos/ATISensor/xmlget.xml","w");
 	happyhttp::Connection conn( "192.168.1.1", 80 );
-	conn.setcallbacks(Begin, Data, Complete, 0 );
+	conn.setcallbacks(onBegin, onData, onComplete, 0 );
 	conn.request( "GET", "/netftapi2.xml?index=0", 0, 0,0 );
 	while( conn.outstanding() )
 		conn.pump();
@@ -55,31 +50,23 @@ bool ATISensor::configureHook(){
 
 	char docName[]="/home/kuka/src/groovy_workspace/orocos/ATISensor/xmlget.xml";
         tinyxml2::XMLDocument doc;
-	std::cout << "LOAD "  << std::endl;
+	std::cout << "LOAD "  << docName << std::endl;
         if(doc.LoadFile(docName)) return 0;
         tinyxml2::XMLHandle docHandle(&doc );
-	std::cout<< "load ok"<<std::endl;
 
 	tinyxml2::XMLElement* child = docHandle.FirstChildElement("netft").FirstChildElement("cfgcpf").ToElement();
 	if(!child) return 0;
-	resp_cfgcpf = child->GetText();
-	cfgcpf=atoi(resp_cfgcpf);
-	std::cout<< "child ok"<<std::endl;
-
+	cfgcpf = atoi(child->GetText());
 
 	child = docHandle.FirstChildElement("netft").FirstChildElement("cfgcpt").ToElement();
 	if(!child) return 0;
-	resp_cfgcpt = child->GetText();
-	cfgcpt=atoi(resp_cfgcpt);
+	cfgcpt = atoi(child->GetText());
 
 	//Plutôt utiliser un port d'entrée pour les valeurs de calibrations si celles-ci sont changées en dynamique
 	
 	std::cout << "cfgcpf = " << cfgcpf <<std::endl;
  	std::cout << "cfgcpt = " << cfgcpt <<std::endl;
 
-	
-	
-	
   std::cout << "ATISensor configured !" <<std::endl;
   return true;
 }
@@ -87,7 +74,9 @@ bool ATISensor::configureHook(){
 bool ATISensor::startHook(){
 
   /* Start request to get sensor data */
+
   /* Calculate number of samples, command code, and open socket here. */
+
 	struct sockaddr_in addr;	/* Address of Net F/T. */
 	int err;			/* Error status of operations. */
 
@@ -96,9 +85,11 @@ bool ATISensor::startHook(){
 		std::cout << "Socket could not be opened" <<std::endl;
 		exit(1);
 	}
-	addr.sin_addr=inetaddr(192.168.1.1);
+
+	addr.sin_addr.s_addr=inet_addr("192.168.1.1");
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(PORT);
+
 	err = connect( socketHandle, (struct sockaddr *)&addr, sizeof(addr) );
 	if (err == -1) {
 		std::cout << "connection failed" <<std::endl;
@@ -143,14 +134,8 @@ void ATISensor::updateHook(){
 	oport_FTData_Tx.write(resp.FTData[3]);
 	oport_FTData_Ty.write(resp.FTData[4]);
 	oport_FTData_Tz.write(resp.FTData[5]);
-	/*std::cout << "Fx = " <<resp.FTData[0]<<std::endl;
-	std::cout << "Fy = " <<resp.FTData[1]<<std::endl;
-	std::cout << "Fz = " <<resp.FTData[2]<<std::endl;
-	std::cout << "Tx = " <<resp.FTData[3]<<std::endl;
-	std::cout << "Ty = " <<resp.FTData[4]<<std::endl;
-	std::cout << "Tz = " <<resp.FTData[5]<<std::endl;
 
-  std::cout << "ATISensor executes updateHook !" <<std::endl;*/
+  /*std::cout << "ATISensor executes updateHook !" <<std::endl;*/
 }
 
 void ATISensor::stopHook() {
@@ -174,19 +159,19 @@ void ATISensor::cleanupHook() {
 
 }
 
-void Begin( const happyhttp::Response* r, void* userdata )
+void onBegin( const happyhttp::Response* r, void* userdata )
 {
 	//printf( "BEGIN (%d %s)\n", r->getstatus(), r->getreason() );
 	compteur = 0;
 }
 
-void Data( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n )
+void onData( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n )
 {
 	fwrite( data,1,n, fichier );
 	compteur += n;
 }
 
-void Complete( const happyhttp::Response* r, void* userdata )
+void onComplete( const happyhttp::Response* r, void* userdata )
 {
 	//printf( "COMPLETE (%d bytes)\n",compteur );
 }

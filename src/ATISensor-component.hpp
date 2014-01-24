@@ -49,7 +49,7 @@ class ATISensor : public RTT::TaskContext{
         unsigned char request[8];	/* The request data sent to the Net F/T. */
 	RESPONSE resp;		/* The structured response received from the Net F/T. */
 	unsigned char response[36];	/* The raw response data received from the Net F/T. */
-        std::string AXES[6];
+        //std::string AXES[6];
 
     	ATISensor(std::string const& name);
    	bool configureHook();
