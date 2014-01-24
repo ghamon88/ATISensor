@@ -10,7 +10,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <tinyxml.h>
+#include <tinyxml2.h>
 #include <happyhttp.h>
 
 #define PORT 49152 /* Port the Net F/T always uses */

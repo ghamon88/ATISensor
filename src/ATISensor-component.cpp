@@ -24,8 +24,7 @@ ATISensor::ATISensor(std::string const& name) : TaskContext(name){
 
 bool ATISensor::configureHook(){
 
-	struct sockaddr_in addr;	/* Address of Net F/T. */
-	int err;			/* Error status of operations. */
+	
 	const char* resp_cfgcpf;
 	const char* resp_cfgcpt;
 	resp_cfgcpf=(char*)malloc(10*sizeof(char));
@@ -55,17 +54,20 @@ bool ATISensor::configureHook(){
 	/* Use of Tinyxml library */
 
 	char docName[]="/home/kuka/src/groovy_workspace/orocos/ATISensor/xmlget.xml";
-        TiXmlDocument doc(docName);
-	std::cout << "LOAD " << docName << std::endl;
-        if(!doc.LoadFile()) return 0;
-        TiXmlHandle docHandle(&doc );				
-	
-	TiXmlElement* child = docHandle.FirstChild("netft").FirstChild("cfgcpf").ToElement();
+        tinyxml2::XMLDocument doc;
+	std::cout << "LOAD "  << std::endl;
+        if(doc.LoadFile(docName)) return 0;
+        tinyxml2::XMLHandle docHandle(&doc );
+	std::cout<< "load ok"<<std::endl;
+
+	tinyxml2::XMLElement* child = docHandle.FirstChildElement("netft").FirstChildElement("cfgcpf").ToElement();
 	if(!child) return 0;
 	resp_cfgcpf = child->GetText();
 	cfgcpf=atoi(resp_cfgcpf);
+	std::cout<< "child ok"<<std::endl;
 
-	child = docHandle.FirstChild("netft").FirstChild("cfgcpt").ToElement();
+
+	child = docHandle.FirstChildElement("netft").FirstChildElement("cfgcpt").ToElement();
 	if(!child) return 0;
 	resp_cfgcpt = child->GetText();
 	cfgcpt=atoi(resp_cfgcpt);
@@ -75,21 +77,8 @@ bool ATISensor::configureHook(){
 	std::cout << "cfgcpf = " << cfgcpf <<std::endl;
  	std::cout << "cfgcpt = " << cfgcpt <<std::endl;
 
-	/* Calculate number of samples, command code, and open socket here. */
 	
-	socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (socketHandle == -1) {
-		std::cout << "Socket could not be opened" <<std::endl;
-		exit(1);
-	}
-	addr.sin_port = htons(PORT);
-	err = connect( socketHandle, (struct sockaddr *)&addr, sizeof(addr) );
-	if (err == -1) {
-		std::cout << "connection failed" <<std::endl;
-		exit(2);
-	}
 	
-	free(fichier);
 	
   std::cout << "ATISensor configured !" <<std::endl;
   return true;
@@ -98,6 +87,23 @@ bool ATISensor::configureHook(){
 bool ATISensor::startHook(){
 
   /* Start request to get sensor data */
+  /* Calculate number of samples, command code, and open socket here. */
+	struct sockaddr_in addr;	/* Address of Net F/T. */
+	int err;			/* Error status of operations. */
+
+	socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (socketHandle == -1) {
+		std::cout << "Socket could not be opened" <<std::endl;
+		exit(1);
+	}
+	addr.sin_addr=inetaddr(192.168.1.1);
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(PORT);
+	err = connect( socketHandle, (struct sockaddr *)&addr, sizeof(addr) );
+	if (err == -1) {
+		std::cout << "connection failed" <<std::endl;
+		exit(2);
+	}
 
   send( socketHandle, (const char *)request, 8, 0 );
 
