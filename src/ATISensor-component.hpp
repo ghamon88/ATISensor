@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <tinyxml2.h>
 #include <happyhttp.h>
+//#include <Eigen/Dense>
+
 
 #define PORT 49152 /* Port the Net F/T always uses */
 #define COMMAND 2 /* Command code 2 starts real time streaming */
@@ -38,12 +40,15 @@ class ATISensor : public RTT::TaskContext{
 	int cfgcpt;
 	int cfgcpf;
 
+//	RTT::InputPort< Eigen::MatrixXd > iport_FT_calibration_data;
 	RTT::OutputPort< int > oport_FTData_Fx;
 	RTT::OutputPort< int > oport_FTData_Fy;
 	RTT::OutputPort< int > oport_FTData_Fz;
 	RTT::OutputPort< int > oport_FTData_Tx;
 	RTT::OutputPort< int > oport_FTData_Ty;
 	RTT::OutputPort< int > oport_FTData_Tz;
+	RTT::OutputPort< float > oport_Fnorm;
+	RTT::OutputPort< std::vector<double> > oport_FTvalues;
 
 	int socketHandle;	/* Handle to UDP socket used to communicate with Net F/T. */
         unsigned char request[8];	/* The request data sent to the Net F/T. */

@@ -4,7 +4,7 @@
 #include <fcntl.h>
 #include <happyhttp.h>
 
-
+// to do : write sensor data in a file, get Input parameters (addProperty?) instead of setting raw ones
 FILE* fichier;
 int compteur = 0;
 
@@ -13,16 +13,21 @@ void onData( const happyhttp::Response* r, void* userdata, const unsigned char* 
 void onComplete( const happyhttp::Response* r, void* userdata );
 
 ATISensor::ATISensor(std::string const& name) : TaskContext(name){
+//  this->addPort("FT_calibration_data", iport_FT_calibration_data);
   this->addPort("FTData_Fx", oport_FTData_Fx);
   this->addPort("FTData_Fy", oport_FTData_Fy);
   this->addPort("FTData_Fz", oport_FTData_Fz);
   this->addPort("FTData_Tx", oport_FTData_Tx);
   this->addPort("FTData_Ty", oport_FTData_Ty);
   this->addPort("FTData_Tz", oport_FTData_Tz);
+  this->addPort("Fnorm", oport_Fnorm);
+  this->addPort("FTvalues", oport_FTvalues);
   std::cout << "ATISensor constructed !" <<std::endl;
 }
 
 bool ATISensor::configureHook(){
+
+	bool webserver_connection = false;
 
 	/* The names of the force and torque axes for display */
 	/*AXES[0] = "Fx";
@@ -30,40 +35,44 @@ bool ATISensor::configureHook(){
 	AXES[2] = "Fz";
 	AXES[3] = "Tx";
 	AXES[4] = "Ty";
-	AXES[5] = "Tz";*/			
+	AXES[5] = "Tz";*/
 
-	*(unsigned short*)&request[0] = htons(0x1234); // standard header. 
-	*(unsigned short*)&request[2] = htons(COMMAND); // per table 9.1 in Net F/T user manual. 
-	*(unsigned int*)&request[4] = htonl(NUM_SAMPLES); // see section 9.1 in Net F/T user manual. 		
+	*(unsigned short*)&request[0] = htons(0x1234); // standard header.
+	*(unsigned short*)&request[2] = htons(COMMAND); // per table 9.1 in Net F/T user manual.
+	*(unsigned int*)&request[4] = htonl(NUM_SAMPLES); // see section 9.1 in Net F/T user manual.
 
 	/* Use of happyhttp library */
+	if(webserver_connection)
+	{
+		fichier=fopen("/home/kuka/src/groovy_workspace/orocos/ATISensor/xmlget.xml","w");
+		happyhttp::Connection conn( "192.168.1.1", 80 );
+		conn.setcallbacks(onBegin, onData, onComplete, 0 );
+		conn.request( "GET", "/netftapi2.xml?index=0", 0, 0,0 );
+		while( conn.outstanding() )
+			conn.pump();
+		fclose(fichier);
 
-	fichier=fopen("/home/kuka/src/groovy_workspace/orocos/ATISensor/xmlget.xml","w");
-	happyhttp::Connection conn( "192.168.1.1", 80 );
-	conn.setcallbacks(onBegin, onData, onComplete, 0 );
-	conn.request( "GET", "/netftapi2.xml?index=0", 0, 0,0 );
-	while( conn.outstanding() )
-		conn.pump();
-	fclose(fichier);
+		/* Use of Tinyxml library */
 
-	/* Use of Tinyxml library */
+		char docName[]="/home/kuka/src/groovy_workspace/orocos/ATISensor/xmlget.xml";
+        	tinyxml2::XMLDocument doc;
+		std::cout << "LOAD "  << docName << std::endl;
+        	if(doc.LoadFile(docName)) return 0;
+        	tinyxml2::XMLHandle docHandle(&doc );
 
-	char docName[]="/home/kuka/src/groovy_workspace/orocos/ATISensor/xmlget.xml";
-        tinyxml2::XMLDocument doc;
-	std::cout << "LOAD "  << docName << std::endl;
-        if(doc.LoadFile(docName)) return 0;
-        tinyxml2::XMLHandle docHandle(&doc );
+		tinyxml2::XMLElement* child = docHandle.FirstChildElement("netft").FirstChildElement("cfgcpf").ToElement();
+		if(!child) return 0;
+		cfgcpf = atoi(child->GetText());
 
-	tinyxml2::XMLElement* child = docHandle.FirstChildElement("netft").FirstChildElement("cfgcpf").ToElement();
-	if(!child) return 0;
-	cfgcpf = atoi(child->GetText());
-
-	child = docHandle.FirstChildElement("netft").FirstChildElement("cfgcpt").ToElement();
-	if(!child) return 0;
-	cfgcpt = atoi(child->GetText());
-
-	//Plutôt utiliser un port d'entrée pour les valeurs de calibrations si celles-ci sont changées en dynamique
-	
+		child = docHandle.FirstChildElement("netft").FirstChildElement("cfgcpt").ToElement();
+		if(!child) return 0;
+		cfgcpt = atoi(child->GetText());
+	}else
+	{
+		//Codés en dur pour le moment car web server non accessible, prévoir un attribut pour shunter ou non
+		cfgcpf=10000;
+		cfgcpt=10000;
+	}
 	std::cout << "cfgcpf = " << cfgcpf <<std::endl;
  	std::cout << "cfgcpt = " << cfgcpt <<std::endl;
 
@@ -104,6 +113,7 @@ bool ATISensor::startHook(){
 }
 
 void ATISensor::updateHook(){
+	float Fnorm;
         int i; /* Generic loop/array index. */
   	/* Receiving the response. */
 	recv( socketHandle, (char *)response, 36, 0 );
@@ -120,22 +130,34 @@ void ATISensor::updateHook(){
 		printf("%s: %d\n", AXES[i], resp.FTData[i]);
 	}*/
 
-	resp.FTData[0]/=cfgcpf;
-	resp.FTData[1]/=cfgcpf;
-	resp.FTData[2]/=cfgcpf;
+	float Fx=(float)resp.FTData[0]/(float)cfgcpf;
+	float Fy=(float)resp.FTData[1]/(float)cfgcpf;
+	float Fz=(float)resp.FTData[2]/(float)cfgcpf;
 	
-	resp.FTData[3]/=cfgcpt;
-	resp.FTData[4]/=cfgcpt;
-	resp.FTData[5]/=cfgcpt;
+	float Tx=(float)resp.FTData[3]/(float)cfgcpt;
+	float Ty=(float)resp.FTData[4]/(float)cfgcpt;
+	float Tz=(float)resp.FTData[5]/(float)cfgcpt;
 
-	oport_FTData_Fx.write(resp.FTData[0]);
-	oport_FTData_Fy.write(resp.FTData[1]);
-	oport_FTData_Fz.write(resp.FTData[2]);
+	Fnorm=sqrt(Fx*Fx+Fy*Fy+Fz*Fz);
+
+	std::vector<double> FTvalues;
+	FTvalues[0]=Fx;
+	FTvalues[1]=Fy;
+	FTvalues[2]=Fz;
+	FTvalues[3]=Tx;
+	FTvalues[4]=Ty;
+	FTvalues[5]=Tz;
+
+	oport_FTvalues.write(FTvalues);
+	oport_FTData_Fx.write(Fx);
+	oport_FTData_Fy.write(Fy);
+	oport_FTData_Fz.write(Fz);
 	oport_FTData_Tx.write(resp.FTData[3]);
 	oport_FTData_Ty.write(resp.FTData[4]);
 	oport_FTData_Tz.write(resp.FTData[5]);
+	oport_Fnorm.write(Fnorm);
 
-  /*std::cout << "ATISensor executes updateHook !" <<std::endl;*/
+  std::cout << "Fnorm="<< Fnorm <<std::endl;
 }
 
 void ATISensor::stopHook() {
