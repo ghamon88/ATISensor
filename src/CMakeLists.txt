@@ -12,18 +12,18 @@
 #
 include_directories(../tinyxml2)
 include_directories(../happyhttp)
+include_directories(/usr/xenomai/include)
 
-#add_library(tinyxml ../tinyxml/tinyxml.cpp)
-#add_library(tinyxmlparser ../tinyxml/tinyxmlparser.cpp)
-#add_library(tinyxmlerror ../tinyxml/tinyxmlerror.cpp)
-#add_library(tinystr ../tinyxml/tinystr.cpp)
+link_directories(/usr/xenomai/lib)
+
 add_library(tinyxml2 ../tinyxml2/tinyxml2.cpp)
 add_library(happyhttp ../happyhttp/happyhttp.cpp)
 
 orocos_component(ATISensor ATISensor-component.hpp ATISensor-component.cpp) # ...you may add multiple source files
 
-#target_link_libraries(ATISensor tinyxml tinyxmlparser tinyxmlerror tinystr happyhttp)
-target_link_libraries(ATISensor tinyxml2 happyhttp)
+target_link_libraries(ATISensor tinyxml2 happyhttp rtdm)
+
+
 
 #
 # You may add multiple orocos_component statements.

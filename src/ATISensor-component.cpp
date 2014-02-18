@@ -3,6 +3,9 @@
 #include <iostream>
 #include <fcntl.h>
 #include <happyhttp.h>
+/*#include <rtdev.h>*/
+#include "/usr/local/rtnet/include/rtnet.h"
+#include <rtdm/rtdm.h>
 
 // to do : write sensor data in a file, get Input parameters (addProperty?) instead of setting raw ones
 FILE* fichier;
@@ -45,7 +48,8 @@ bool ATISensor::configureHook(){
 	if(webserver_connection)
 	{
 		fichier=fopen("/home/kuka/src/groovy_workspace/orocos/ATISensor/xmlget.xml","w");
-		happyhttp::Connection conn( "192.168.1.1", 80 );
+		std::cout<< "tentative de connexion http ..." << std::endl;
+		happyhttp::Connection conn( "192.168.100.103", 80 );
 		conn.setcallbacks(onBegin, onData, onComplete, 0 );
 		conn.request( "GET", "/netftapi2.xml?index=0", 0, 0,0 );
 		while( conn.outstanding() )
@@ -89,13 +93,31 @@ bool ATISensor::startHook(){
 	struct sockaddr_in addr;	/* Address of Net F/T. */
 	int err;			/* Error status of operations. */
 
-	socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	/* rtnet */
+	socketHandle = rt_dev_socket(AF_INET, SOCK_DGRAM, 0);
+	if (socketHandle == -1){
+		std::cout << "Socket could not be opened" << std::endl;
+		exit(1);
+	}
+
+	addr.sin_addr.s_addr = inet_addr("192.168.100.103");
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(PORT);
+
+	err = rt_dev_connect(socketHandle, (struct sockaddr *)&addr, sizeof(addr) );
+	if(err==-1){
+		std::cout << "connection failed" << std::endl;
+		exit(2);
+	}
+	rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+
+/*	socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (socketHandle == -1) {
 		std::cout << "Socket could not be opened" <<std::endl;
 		exit(1);
 	}
 
-	addr.sin_addr.s_addr=inet_addr("192.168.1.1");
+	addr.sin_addr.s_addr=inet_addr("192.168.100.103");
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(PORT);
 
@@ -105,7 +127,7 @@ bool ATISensor::startHook(){
 		exit(2);
 	}
 
-  send( socketHandle, (const char *)request, 8, 0 );
+  send( socketHandle, (const char *)request, 8, 0 );*/
 
   std::cout << "ATISensor started !" <<std::endl;
 
@@ -115,8 +137,12 @@ bool ATISensor::startHook(){
 void ATISensor::updateHook(){
 	float Fnorm;
         int i; /* Generic loop/array index. */
-  	/* Receiving the response. */
-	recv( socketHandle, (char *)response, 36, 0 );
+
+	/* rtnet */
+	rt_dev_recv(socketHandle, (char *)response, 36, 0 );
+
+	/* Receiving the response. */
+	/*recv( socketHandle, (char *)response, 36, 0 );*/
 	resp.rdt_sequence = ntohl(*(unsigned int*)&response[0]);
 	resp.ft_sequence = ntohl(*(unsigned int*)&response[4]);
 	resp.status = ntohl(*(unsigned int*)&response[8]);
@@ -141,6 +167,7 @@ void ATISensor::updateHook(){
 	Fnorm=sqrt(Fx*Fx+Fy*Fy+Fz*Fz);
 
 	std::vector<double> FTvalues;
+	FTvalues.resize(6);
 	FTvalues[0]=Fx;
 	FTvalues[1]=Fy;
 	FTvalues[2]=Fz;
@@ -162,14 +189,17 @@ void ATISensor::updateHook(){
 
 void ATISensor::stopHook() {
 
-  /* stop request getting data sensor */
+	/* stop request getting data sensor */
+	*(unsigned short*)&request[2] = htons(0); // per table 9.1 in Net F/T user manual.
 
-  *(unsigned short*)&request[2] = htons(0); // per table 9.1 in Net F/T user manual. 
-  send( socketHandle, (const char *)request, 8, 0 );
+	/* rtnet */
+	 rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+	 rt_dev_close(socketHandle);
 
-  close(socketHandle);
+	/*send( socketHandle, (const char *)request, 8, 0 );
+	close(socketHandle);*/
 
-  std::cout << "ATISensor executes stopping !" <<std::endl;
+	std::cout << "ATISensor executes stopping !" <<std::endl;
 }
 
 void ATISensor::cleanupHook() {
