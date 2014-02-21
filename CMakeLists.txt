@@ -28,6 +28,7 @@ include( ${OROCOS-RTT_USE_FILE_PATH}/UseOROCOS-RTT.cmake )
 # Rest of the configuration is in src/
 add_subdirectory( src )
 
+
 #add_library(tinyxml tinyxml/tinyxml.cpp)
 #add_library(tinyxmlparser tinyxml/tinyxmlparser.cpp)
 #add_library(tinyxmlerror tinyxml/tinyxmlerror.cpp)

@@ -16,7 +16,9 @@ void onData( const happyhttp::Response* r, void* userdata, const unsigned char* 
 void onComplete( const happyhttp::Response* r, void* userdata );
 
 ATISensor::ATISensor(std::string const& name) : TaskContext(name){
-//  this->addPort("FT_calibration_data", iport_FT_calibration_data);
+  
+  this->addPort("FT_calibration_data", iport_FT_calibration_data);
+  
   this->addPort("FTData_Fx", oport_FTData_Fx);
   this->addPort("FTData_Fy", oport_FTData_Fy);
   this->addPort("FTData_Fz", oport_FTData_Fz);
@@ -184,7 +186,15 @@ void ATISensor::updateHook(){
 	oport_FTData_Tz.write(resp.FTData[5]);
 	oport_Fnorm.write(Fnorm);
 
-  std::cout << "Fnorm="<< Fnorm <<std::endl;
+	Eigen::Matrix<double,3,6> calibration_matrix;
+	RTT::FlowStatus calibration_matrix_fs = iport_FT_calibration_data.read(calibration_matrix);
+	if(calibration_matrix_fs == RTT::NewData){
+		std::cout<< calibration_matrix(0,0) << " " << calibration_matrix(0,1) << " " << calibration_matrix(0,2) << std::endl;
+		std::cout<< calibration_matrix(1,0) << " " << calibration_matrix(1,1) << " " << calibration_matrix(1,2) << std::endl;
+		std::cout<< calibration_matrix(2,0) << " " << calibration_matrix(2,1) << " " << calibration_matrix(2,2) << std::endl;
+	}
+
+  //std::cout << "Fnorm="<< Fnorm <<std::endl;
 }
 
 void ATISensor::stopHook() {

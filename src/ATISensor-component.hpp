@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <tinyxml2.h>
 #include <happyhttp.h>
-//#include <Eigen/Dense>
+#include "/home/kuka/src/groovy_workspace/eigen_lgsm/include/eigen3/Eigen/Dense"
 
 
 #define PORT 49152 /* Port the Net F/T always uses */
@@ -39,8 +39,9 @@ class ATISensor : public RTT::TaskContext{
 	
 	int cfgcpt;
 	int cfgcpf;
+	
+        RTT::InputPort< Eigen::Matrix<double,3,6> > iport_FT_calibration_data;
 
-//	RTT::InputPort< Eigen::MatrixXd > iport_FT_calibration_data;
 	RTT::OutputPort< int > oport_FTData_Fx;
 	RTT::OutputPort< int > oport_FTData_Fy;
 	RTT::OutputPort< int > oport_FTData_Fz;
