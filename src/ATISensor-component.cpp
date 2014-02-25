@@ -86,8 +86,8 @@ bool ATISensor::configureHook(){
 	}else
 	{
 		//Codés en dur pour le moment car web server non accessible, prévoir un attribut pour shunter ou non
-		cfgcpf=10000;
-		cfgcpt=10000;
+		cfgcpf=1000000;
+		cfgcpt=1000000;
 	}
 	std::cout << "cfgcpf = " << cfgcpf <<std::endl;
  	std::cout << "cfgcpt = " << cfgcpt <<std::endl;
@@ -150,15 +150,22 @@ void ATISensor::updateHook(){
 	float Fnorm;
         int i; /* Generic loop/array index. */
 
+/*	if(bias_done && bias_asked){
+		*(unsigned short*)&request[2] = htons(COMMAND); // per table 9.1 in Net F/T user manual.
+		rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+		bias_asked=false;
+	}*/
 	RTT::FlowStatus bias_fs=iport_bias.read(bias_asked);
 	if(bias_fs==RTT::NewData){
 		if(!bias_done && bias_asked){
-			*(unsigned short*)&request[2] = htons(0x0042); // per table 9.1 in Net F/T user manual.
+			*(unsigned short*)&request[2] = htons(0); // per table 9.1 in Net F/T user manual.
 			rt_dev_send(socketHandle, (const char *)request, 8, 0 );
-			bias_done=true;
+			*(unsigned short*)&request[2] = htons(66); // per table 9.1 in Net F/T user manual.
+			rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+			*(unsigned short*)&request[2] = htons(2); // per table 9.1 in Net F/T user manual.
+			rt_dev_send(socketHandle, (const char *)request, 8, 0 );
 			std::cout<< "bias order sent, returning to getValue mode "<<std::endl;
-			*(unsigned short*)&request[2] = htons(COMMAND); // per table 9.1 in Net F/T user manual.
-			rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+			bias_done=true;
 		}
 	}
 
@@ -203,7 +210,7 @@ void ATISensor::updateHook(){
 	if(calibration_ended){
 		Fx-=Px;
 		Fy-=Py;
-		Fz=Fz-Pz-P;
+		Fz=Fz-Pz+P; //changé en + P ...
 		Tx=Tx-Gy*Pz+Gz*Py-Gy*P;
 		Ty=Ty+Gx*Pz+Gz*Px+Gx*P;
 		Tz=Tz-Gy*Px-Gx*Py;
@@ -231,20 +238,22 @@ void ATISensor::updateHook(){
 
 	Eigen::Matrix<double,3,6> calibration_matrix;
 	RTT::FlowStatus calibration_matrix_fs = iport_FT_calibration_data.read(calibration_matrix);
-	if(calibration_matrix_fs == RTT::NewData){
-		calibration_ended=true;
+	if(calibration_matrix_fs == RTT::NewData && !calibration_ended){
 		std::cout<< calibration_matrix(0,0) << " " << calibration_matrix(0,1) << " " << calibration_matrix(0,2) << std::endl;
 		std::cout<< calibration_matrix(1,0) << " " << calibration_matrix(1,1) << " " << calibration_matrix(1,2) << std::endl;
 		std::cout<< calibration_matrix(2,0) << " " << calibration_matrix(2,1) << " " << calibration_matrix(2,2) << std::endl;
 
-		P=(calibration_matrix(1,0)+std::abs(calibration_matrix(1,2))+calibration_matrix(2,1)+std::abs(calibration_matrix(2,2)))/4;
+		P=(std::abs(calibration_matrix(1,0))+std::abs(calibration_matrix(1,2))+std::abs(calibration_matrix(2,1))+std::abs(calibration_matrix(2,2)))/4;
 		Gx=(calibration_matrix(2,4)+calibration_matrix(2,5))/(2*P);
 		Gy=(calibration_matrix(1,5)-calibration_matrix(1,3))/(2*P);
 		Gz=(Gx*P-Gy*P-calibration_matrix(2,3)-calibration_matrix(1,4))/(2*P);
 
+		calibration_ended=true;
 	}
 
-  //std::cout << "Fnorm="<< Fnorm <<std::endl;
+  std::cout << "Fnorm = "<< Fnorm << " Fx = " << Fx << " Fy = " << Fy << "Fz = " << Fz << " Tx = "<< Tx << " Ty = " << Ty << " Tz = "<< Tz <<std::endl;
+  std::cout << "P = "<< P << " Px = " << Px << " Py = " << Py << "Pz = " << Pz << " Gx = "<< Gx << " Gy = " << Gy << " Gz = "<< Gz <<std::endl;
+  std::cout << "calibration_ended = "<< calibration_ended << " bias_done = " << bias_done << " bias_asked = " << bias_asked <<std::endl;
 }
 
 void ATISensor::stopHook() {
