@@ -22,24 +22,15 @@ endif()
 # documentation.
 include( ${OROCOS-RTT_USE_FILE_PATH}/UseOROCOS-RTT.cmake )
 
-#include_directories(tinyxml)
-#include_directories(happyhttp)
+include_directories (/home/kuka/src/groovy_workspace/eigen_lgsm/include/eigen3)
+
 
 # Rest of the configuration is in src/
 add_subdirectory( src )
 
 
-#add_library(tinyxml tinyxml/tinyxml.cpp)
-#add_library(tinyxmlparser tinyxml/tinyxmlparser.cpp)
-#add_library(tinyxmlerror tinyxml/tinyxmlerror.cpp)
-#add_library(tinystr tinyxml/tinystr.cpp)
 
 #LINK_DIRECTORIES(/home/kuka/src/groovy_workspace/orocos/ATISensor/lib)
-
-#orocos_component(ATISensor src/ATISensor-component.cpp src/ATISensor-component.hpp)
-#add_dependencies(ATISensor tinyxml tinyxmlparser tinyxmlerror tinystr) 
-
-#target_link_libraries(ATISensor -ltinyxml -ltinyxmlparser -ltinyxmlerror -ltinystr)
 
 #
 # Building a typekit using typegen (recommended):

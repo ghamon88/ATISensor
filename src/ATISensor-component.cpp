@@ -4,8 +4,9 @@
 #include <fcntl.h>
 #include <happyhttp.h>
 /*#include <rtdev.h>*/
-#include "/usr/local/rtnet/include/rtnet.h"
+#include <rtnet.h>
 #include <rtdm/rtdm.h>
+#include <kdl/chain.hpp>
 
 // to do : write sensor data in a file, get Input parameters (addProperty?) instead of setting raw ones
 FILE* fichier;
@@ -16,9 +17,11 @@ void onData( const happyhttp::Response* r, void* userdata, const unsigned char* 
 void onComplete( const happyhttp::Response* r, void* userdata );
 
 ATISensor::ATISensor(std::string const& name) : TaskContext(name){
-  
-  this->addPort("FT_calibration_data", iport_FT_calibration_data);
-  
+
+  this->addPort("FT_calibration_data_i", iport_FT_calibration_data);
+  this->addPort("transforms_i", iport_transforms);
+  this->addPort("bias_i",iport_bias);
+
   this->addPort("FTData_Fx", oport_FTData_Fx);
   this->addPort("FTData_Fy", oport_FTData_Fy);
   this->addPort("FTData_Fz", oport_FTData_Fz);
@@ -27,12 +30,19 @@ ATISensor::ATISensor(std::string const& name) : TaskContext(name){
   this->addPort("FTData_Tz", oport_FTData_Tz);
   this->addPort("Fnorm", oport_Fnorm);
   this->addPort("FTvalues", oport_FTvalues);
+
+ // this->addProperty( "webserser" , webserver_connection ).doc(" Connect to the sensor webserver to get configurations values, only possible in non realtime connection ");
+  this->addOperation("setWebserver", &ATISensor::setWebserver, this, RTT::OwnThread);
+
   std::cout << "ATISensor constructed !" <<std::endl;
 }
 
 bool ATISensor::configureHook(){
 
-	bool webserver_connection = false;
+	calibration_ended = false;
+	bias_done=false;
+	bias_asked=false;
+	robot_transforms.resize(8);
 
 	/* The names of the force and torque axes for display */
 	/*AXES[0] = "Fx";
@@ -140,6 +150,29 @@ void ATISensor::updateHook(){
 	float Fnorm;
         int i; /* Generic loop/array index. */
 
+	RTT::FlowStatus bias_fs=iport_bias.read(bias_asked);
+	if(bias_fs==RTT::NewData){
+		if(!bias_done && bias_asked){
+			*(unsigned short*)&request[2] = htons(0x0042); // per table 9.1 in Net F/T user manual.
+			rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+			bias_done=true;
+			std::cout<< "bias order sent, returning to getValue mode "<<std::endl;
+			*(unsigned short*)&request[2] = htons(COMMAND); // per table 9.1 in Net F/T user manual.
+			rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+		}
+	}
+
+	if(calibration_ended){
+		RTT::FlowStatus transforms_fs=iport_transforms.read(robot_transforms);
+		if(transforms_fs==RTT::NewData){
+			Px=-P*(2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[2]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[3]);
+			Py=-P*(2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[2]+2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[3]);
+			Pz=-P*(1-2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[0]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[1]);
+			Px=-Px; //Xpoignet et Xcapteur inversés
+			Py=-Py; //Ypoignet et Ycapteur inversés
+		}
+	}
+
 	/* rtnet */
 	rt_dev_recv(socketHandle, (char *)response, 36, 0 );
 
@@ -151,7 +184,7 @@ void ATISensor::updateHook(){
 	for( i = 0; i < 6; i++ ) {
 		resp.FTData[i] = ntohl(*(int*)&response[12 + i * 4]);
 	}
-	
+
 	/* Output the response data */
 	//printf( "Status: 0x%08x\n", resp.status );
 	/*for (i =0;i < 6;i++) {
@@ -161,10 +194,20 @@ void ATISensor::updateHook(){
 	float Fx=(float)resp.FTData[0]/(float)cfgcpf;
 	float Fy=(float)resp.FTData[1]/(float)cfgcpf;
 	float Fz=(float)resp.FTData[2]/(float)cfgcpf;
-	
+
 	float Tx=(float)resp.FTData[3]/(float)cfgcpt;
 	float Ty=(float)resp.FTData[4]/(float)cfgcpt;
 	float Tz=(float)resp.FTData[5]/(float)cfgcpt;
+
+
+	if(calibration_ended){
+		Fx-=Px;
+		Fy-=Py;
+		Fz=Fz-Pz-P;
+		Tx=Tx-Gy*Pz+Gz*Py-Gy*P;
+		Ty=Ty+Gx*Pz+Gz*Px+Gx*P;
+		Tz=Tz-Gy*Px-Gx*Py;
+	}
 
 	Fnorm=sqrt(Fx*Fx+Fy*Fy+Fz*Fz);
 
@@ -189,9 +232,16 @@ void ATISensor::updateHook(){
 	Eigen::Matrix<double,3,6> calibration_matrix;
 	RTT::FlowStatus calibration_matrix_fs = iport_FT_calibration_data.read(calibration_matrix);
 	if(calibration_matrix_fs == RTT::NewData){
+		calibration_ended=true;
 		std::cout<< calibration_matrix(0,0) << " " << calibration_matrix(0,1) << " " << calibration_matrix(0,2) << std::endl;
 		std::cout<< calibration_matrix(1,0) << " " << calibration_matrix(1,1) << " " << calibration_matrix(1,2) << std::endl;
 		std::cout<< calibration_matrix(2,0) << " " << calibration_matrix(2,1) << " " << calibration_matrix(2,2) << std::endl;
+
+		P=(calibration_matrix(1,0)+std::abs(calibration_matrix(1,2))+calibration_matrix(2,1)+std::abs(calibration_matrix(2,2)))/4;
+		Gx=(calibration_matrix(2,4)+calibration_matrix(2,5))/(2*P);
+		Gy=(calibration_matrix(1,5)-calibration_matrix(1,3))/(2*P);
+		Gz=(Gx*P-Gy*P-calibration_matrix(2,3)-calibration_matrix(1,4))/(2*P);
+
 	}
 
   //std::cout << "Fnorm="<< Fnorm <<std::endl;
@@ -236,6 +286,10 @@ void onData( const happyhttp::Response* r, void* userdata, const unsigned char* 
 void onComplete( const happyhttp::Response* r, void* userdata )
 {
 	//printf( "COMPLETE (%d bytes)\n",compteur );
+}
+
+void ATISensor::setWebserver(int m){
+	webserver_connection=m;
 }
 
 /*

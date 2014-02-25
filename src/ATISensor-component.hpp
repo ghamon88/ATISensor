@@ -12,8 +12,9 @@
 #include <stdlib.h>
 #include <tinyxml2.h>
 #include <happyhttp.h>
-#include "/home/kuka/src/groovy_workspace/eigen_lgsm/include/eigen3/Eigen/Dense"
-
+#include <Eigen/Dense>
+#include <kdl/chainfksolver.hpp>
+#include <directKinematics-types.hpp>
 
 #define PORT 49152 /* Port the Net F/T always uses */
 #define COMMAND 2 /* Command code 2 starts real time streaming */
@@ -39,8 +40,13 @@ class ATISensor : public RTT::TaskContext{
 	
 	int cfgcpt;
 	int cfgcpf;
-	
+
+	double Px,Py,Pz,P,Gx,Gy,Gz;
+        std::vector<DirectKinematicsData> robot_transforms;
+
         RTT::InputPort< Eigen::Matrix<double,3,6> > iport_FT_calibration_data;
+	RTT::InputPort< std::vector<DirectKinematicsData> > iport_transforms;
+	RTT::InputPort< bool > iport_bias;
 
 	RTT::OutputPort< int > oport_FTData_Fx;
 	RTT::OutputPort< int > oport_FTData_Fy;
@@ -50,7 +56,10 @@ class ATISensor : public RTT::TaskContext{
 	RTT::OutputPort< int > oport_FTData_Tz;
 	RTT::OutputPort< float > oport_Fnorm;
 	RTT::OutputPort< std::vector<double> > oport_FTvalues;
+	bool bias_done;
+	bool bias_asked;
 
+	bool calibration_ended;
 	int socketHandle;	/* Handle to UDP socket used to communicate with Net F/T. */
         unsigned char request[8];	/* The request data sent to the Net F/T. */
 	RESPONSE resp;		/* The structured response received from the Net F/T. */
@@ -63,5 +72,7 @@ class ATISensor : public RTT::TaskContext{
     	void updateHook();
    	void stopHook();
     	void cleanupHook();
+	void setWebserver(int);
+	int webserver_connection; //property, se connecte au server web pour récupérer cfgcpt cfgcpf
 };
 #endif

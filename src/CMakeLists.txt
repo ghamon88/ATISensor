@@ -13,6 +13,9 @@
 include_directories(../tinyxml2)
 include_directories(../happyhttp)
 include_directories(/usr/xenomai/include)
+include_directories(../../../directKinematics/include/directKinematics)
+include_directories(/usr/local/rtnet/include)
+include_directories(/home/kuka/src/groovy_workspace/eigen_lgsm/include/eigen3)
 
 link_directories(/usr/xenomai/lib)
 
