@@ -174,9 +174,13 @@ void ATISensor::updateHook(){
 	if(calibration_ended){
 		RTT::FlowStatus transforms_fs=iport_transforms.read(robot_transforms);
 		if(transforms_fs==RTT::NewData){
-			Px=-P*(2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[2]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[3]);
+			/*Px=-P*(2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[2]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[3]);
 			Py=-P*(2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[2]+2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[3]);
-			Pz=-P*(1-2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[0]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[1]);
+			Pz=-P*(1-2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[0]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[1]);*/
+			Px=-Pcx*(2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[2]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[3]);
+			Py=-Pcy*(2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[2]+2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[3]);
+			Pz=-Pcz*(1-2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[0]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[1]);
+
 			Px=-Px; //Xpoignet et Xcapteur inversés
 			Py=-Py; //Ypoignet et Ycapteur inversés
 		}
@@ -212,9 +216,15 @@ void ATISensor::updateHook(){
 	if(calibration_ended){
 		Fx-=Px;
 		Fy-=Py;
-		Fz=Fz-Pz+P; //offset(bias)=-P , compensation= Valeur_lu - Pz dans le repère capteur - offset
-		Tx=Tx-Gy*Pz+Gz*Py+Gy*P;
-		Ty=Ty+Gx*Pz+Gz*Px-Gx*P;
+
+		//Fz=Fz-Pz+P; //offset(bias)=-P , compensation= Valeur_lu - Pz dans le repère capteur - offset
+		Fz=Fz-Pz+Pcz;
+
+		/*Tx=Tx-Gy*Pz+Gz*Py+Gy*P;
+		Ty=Ty+Gx*Pz+Gz*Px-Gx*P;*/
+		Tx=Tx-Gy*Pz+Gz*Py+Gy*Pcz;
+                Ty=Ty+Gx*Pz+Gz*Px-Gx*Pcz;
+
 		Tz=Tz-Gy*Px-Gx*Py;
 	}
 
@@ -245,15 +255,18 @@ void ATISensor::updateHook(){
 		std::cout<< calibration_matrix(1,0) << " " << calibration_matrix(1,1) << " " << calibration_matrix(1,2) << std::endl;
 		std::cout<< calibration_matrix(2,0) << " " << calibration_matrix(2,1) << " " << calibration_matrix(2,2) << std::endl;
 
-		P=(std::abs(calibration_matrix(1,0))+std::abs(calibration_matrix(1,2))+std::abs(calibration_matrix(2,1))+std::abs(calibration_matrix(2,2)))/4;
-		/*double max=std::abs(calibration_matrix(1,0));
-		max=std::max(max,std::abs(calibration_matrix(1,2)));
-		max=std::max(max,std::abs(calibration_matrix(2,1)));
-		P=std::max(max,std::abs(calibration_matrix(2,2)));*/
+		/*P=(std::abs(calibration_matrix(1,0))+std::abs(calibration_matrix(1,2))+std::abs(calibration_matrix(2,1))+std::abs(calibration_matrix(2,2)))/4;
 
 		Gx=(calibration_matrix(2,4)+std::abs(calibration_matrix(2,5)))/(2*P);
 		Gy=(-calibration_matrix(1,5)-calibration_matrix(1,3))/(2*P);
-		Gz=(-Gx*P+Gy*P+calibration_matrix(2,3)+calibration_matrix(1,4))/(2*P);
+		Gz=(-Gx*P+Gy*P+calibration_matrix(2,3)+calibration_matrix(1,4))/(2*P); */
+		Pcx=std::abs(calibration_matrix(1,0));
+		Pcy=std::abs(calibration_matrix(2,1));
+		Pcz=(std::abs(calibration_matrix(1,2))+std::abs(calibration_matrix(2,2)))/2;
+
+		Gx=((calibration_matrix(2,4)/Pcz)+(std::abs(calibration_matrix(2,5))/Pcy))/2;
+                Gy=((-calibration_matrix(1,5)/Pcx)-(calibration_matrix(1,3)/Pcz))/2;
+                Gz=(((calibration_matrix(1,4)-Gx*Pcz)/Pcx)+((calibration_matrix(2,3)+Gy*Pcz)/Pcy))/2;
 
 		calibration_ended=true;
 	}

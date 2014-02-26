@@ -41,7 +41,7 @@ class ATISensor : public RTT::TaskContext{
 	int cfgcpt;
 	int cfgcpf;
 
-	double Px,Py,Pz,P,Gx,Gy,Gz;
+	double Px,Py,Pz,P,Gx,Gy,Gz,Pcx,Pcy,Pcz;
         std::vector<DirectKinematicsData> robot_transforms;
 
         RTT::InputPort< Eigen::Matrix<double,3,6> > iport_FT_calibration_data;
