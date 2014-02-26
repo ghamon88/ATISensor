@@ -7,6 +7,8 @@
 #include <rtnet.h>
 #include <rtdm/rtdm.h>
 #include <kdl/chain.hpp>
+#include <cmath>
+#include <algorithm>
 
 // to do : write sensor data in a file, get Input parameters (addProperty?) instead of setting raw ones
 FILE* fichier;
@@ -210,9 +212,9 @@ void ATISensor::updateHook(){
 	if(calibration_ended){
 		Fx-=Px;
 		Fy-=Py;
-		Fz=Fz-Pz+P; //changé en + P ...
-		Tx=Tx-Gy*Pz+Gz*Py-Gy*P;
-		Ty=Ty+Gx*Pz+Gz*Px+Gx*P;
+		Fz=Fz-Pz+P; //offset(bias)=-P , compensation= Valeur_lu - Pz dans le repère capteur - offset
+		Tx=Tx-Gy*Pz+Gz*Py+Gy*P;
+		Ty=Ty+Gx*Pz+Gz*Px-Gx*P;
 		Tz=Tz-Gy*Px-Gx*Py;
 	}
 
@@ -244,9 +246,14 @@ void ATISensor::updateHook(){
 		std::cout<< calibration_matrix(2,0) << " " << calibration_matrix(2,1) << " " << calibration_matrix(2,2) << std::endl;
 
 		P=(std::abs(calibration_matrix(1,0))+std::abs(calibration_matrix(1,2))+std::abs(calibration_matrix(2,1))+std::abs(calibration_matrix(2,2)))/4;
-		Gx=(calibration_matrix(2,4)+calibration_matrix(2,5))/(2*P);
-		Gy=(calibration_matrix(1,5)-calibration_matrix(1,3))/(2*P);
-		Gz=(Gx*P-Gy*P-calibration_matrix(2,3)-calibration_matrix(1,4))/(2*P);
+		/*double max=std::abs(calibration_matrix(1,0));
+		max=std::max(max,std::abs(calibration_matrix(1,2)));
+		max=std::max(max,std::abs(calibration_matrix(2,1)));
+		P=std::max(max,std::abs(calibration_matrix(2,2)));*/
+
+		Gx=(calibration_matrix(2,4)+std::abs(calibration_matrix(2,5)))/(2*P);
+		Gy=(-calibration_matrix(1,5)-calibration_matrix(1,3))/(2*P);
+		Gz=(-Gx*P+Gy*P+calibration_matrix(2,3)+calibration_matrix(1,4))/(2*P);
 
 		calibration_ended=true;
 	}
