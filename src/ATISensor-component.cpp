@@ -1,16 +1,8 @@
-#include "ATISensor-component.hpp"
-#include <rtt/Component.hpp>
-#include <iostream>
-#include <fcntl.h>
-#include <happyhttp.h>
-/*#include <rtdev.h>*/
-#include <rtnet.h>
-#include <rtdm/rtdm.h>
-#include <kdl/chain.hpp>
-#include <cmath>
-#include <algorithm>
+// copyright 2014 ISIR-CNRS
+// author Guillaume Hamon
 
-// to do : write sensor data in a file, get Input parameters (addProperty?) instead of setting raw ones
+#include "ATISensor-component.hpp"
+
 FILE* fichier;
 int compteur = 0;
 
@@ -18,41 +10,31 @@ void onBegin( const happyhttp::Response* r, void* userdata );
 void onData( const happyhttp::Response* r, void* userdata, const unsigned char* data, int n );
 void onComplete( const happyhttp::Response* r, void* userdata );
 
+
 ATISensor::ATISensor(std::string const& name) : TaskContext(name){
 
   this->addPort("FT_calibration_data_i", iport_FT_calibration_data);
   this->addPort("transforms_i", iport_transforms);
   this->addPort("bias_i",iport_bias);
 
-  this->addPort("FTData_Fx", oport_FTData_Fx);
-  this->addPort("FTData_Fy", oport_FTData_Fy);
-  this->addPort("FTData_Fz", oport_FTData_Fz);
-  this->addPort("FTData_Tx", oport_FTData_Tx);
-  this->addPort("FTData_Ty", oport_FTData_Ty);
-  this->addPort("FTData_Tz", oport_FTData_Tz);
   this->addPort("Fnorm", oport_Fnorm);
   this->addPort("FTvalues", oport_FTvalues);
 
- // this->addProperty( "webserser" , webserver_connection ).doc(" Connect to the sensor webserver to get configurations values, only possible in non realtime connection ");
-  this->addOperation("setWebserver", &ATISensor::setWebserver, this, RTT::OwnThread);
+  this->addOperation("setWebserver", &ATISensor::setWebserver, this, RTT::OwnThread); //specify if the component should connect to the sensor webserver to retrieve configuration parameters values (not feasible in real-time communication)
 
-  std::cout << "ATISensor constructed !" <<std::endl;
+  std::cerr << "ATISensor constructed !" <<std::endl;
 }
 
 bool ATISensor::configureHook(){
+	//RTT::Logger::In in("ATI");
+	//RTT::Logger::log().allowRealTime();
 
+	// variables initialization
 	calibration_ended = false;
 	bias_done=false;
 	bias_asked=false;
 	robot_transforms.resize(8);
-
-	/* The names of the force and torque axes for display */
-	/*AXES[0] = "Fx";
-	AXES[1] = "Fy";
-	AXES[2] = "Fz";
-	AXES[3] = "Tx";
-	AXES[4] = "Ty";
-	AXES[5] = "Tz";*/
+	FTvalues.resize(6);
 
 	*(unsigned short*)&request[0] = htons(0x1234); // standard header.
 	*(unsigned short*)&request[2] = htons(COMMAND); // per table 9.1 in Net F/T user manual.
@@ -87,7 +69,7 @@ bool ATISensor::configureHook(){
 		cfgcpt = atoi(child->GetText());
 	}else
 	{
-		//Codés en dur pour le moment car web server non accessible, prévoir un attribut pour shunter ou non
+		// Hardcoded for now, webserver is not accessible in realtime communication, TODO: set these as properties to avoid recompiling
 		cfgcpf=1000000;
 		cfgcpt=1000000;
 	}
@@ -102,12 +84,12 @@ bool ATISensor::startHook(){
 
   /* Start request to get sensor data */
 
-  /* Calculate number of samples, command code, and open socket here. */
 
 	struct sockaddr_in addr;	/* Address of Net F/T. */
 	int err;			/* Error status of operations. */
 
 	/* rtnet */
+	/* Open socket here. */
 	socketHandle = rt_dev_socket(AF_INET, SOCK_DGRAM, 0);
 	if (socketHandle == -1){
 		std::cout << "Socket could not be opened" << std::endl;
@@ -123,25 +105,7 @@ bool ATISensor::startHook(){
 		std::cout << "connection failed" << std::endl;
 		exit(2);
 	}
-	rt_dev_send(socketHandle, (const char *)request, 8, 0 );
-
-/*	socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (socketHandle == -1) {
-		std::cout << "Socket could not be opened" <<std::endl;
-		exit(1);
-	}
-
-	addr.sin_addr.s_addr=inet_addr("192.168.100.103");
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(PORT);
-
-	err = connect( socketHandle, (struct sockaddr *)&addr, sizeof(addr) );
-	if (err == -1) {
-		std::cout << "connection failed" <<std::endl;
-		exit(2);
-	}
-
-  send( socketHandle, (const char *)request, 8, 0 );*/
+	rt_dev_send(socketHandle, (const char *)request, 8, 0 ); // send start command to the sensor net box
 
   std::cout << "ATISensor started !" <<std::endl;
 
@@ -152,45 +116,46 @@ void ATISensor::updateHook(){
 	float Fnorm;
         int i; /* Generic loop/array index. */
 
-/*	if(bias_done && bias_asked){
-		*(unsigned short*)&request[2] = htons(COMMAND); // per table 9.1 in Net F/T user manual.
-		rt_dev_send(socketHandle, (const char *)request, 8, 0 );
-		bias_asked=false;
-	}*/
-	RTT::FlowStatus bias_fs=iport_bias.read(bias_asked);
-	if(bias_fs==RTT::NewData){
-		if(!bias_done && bias_asked){
-			*(unsigned short*)&request[2] = htons(0); // per table 9.1 in Net F/T user manual.
-			rt_dev_send(socketHandle, (const char *)request, 8, 0 );
-			*(unsigned short*)&request[2] = htons(66); // per table 9.1 in Net F/T user manual.
-			rt_dev_send(socketHandle, (const char *)request, 8, 0 );
-			*(unsigned short*)&request[2] = htons(2); // per table 9.1 in Net F/T user manual.
-			rt_dev_send(socketHandle, (const char *)request, 8, 0 );
-			std::cout<< "bias order sent, returning to getValue mode "<<std::endl;
-			bias_done=true;
+	if(iport_bias.connected()){
+		RTT::FlowStatus bias_fs=iport_bias.read(bias_asked);
+		if(bias_fs==RTT::NewData){
+			if(!bias_done && bias_asked){
+				*(unsigned short*)&request[2] = htons(0); // stop, per table 9.1 in Net F/T user manual.
+				rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+				*(unsigned short*)&request[2] = htons(66); // bias, per table 9.1 in Net F/T user manual.
+				rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+				*(unsigned short*)&request[2] = htons(2); // start, per table 9.1 in Net F/T user manual.
+				rt_dev_send(socketHandle, (const char *)request, 8, 0 );
+				std::cout<< "bias order sent "<<std::endl;
+				bias_done=true;
+			}
 		}
 	}
-
 	if(calibration_ended){
 		RTT::FlowStatus transforms_fs=iport_transforms.read(robot_transforms);
 		if(transforms_fs==RTT::NewData){
-			/*Px=-P*(2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[2]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[3]);
-			Py=-P*(2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[2]+2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[3]);
-			Pz=-P*(1-2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[0]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[1]);*/
+
+			/* Computations with the sensor uniform density hypothesis */
+			//Px=-P*(2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[2]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[3]);
+			//Py=-P*(2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[2]+2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[3]);
+			//Pz=-P*(1-2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[0]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[1]);
+
+			/* Computations with the sensor non uniform density hypothesis */
 			Px=-Pcx*(2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[2]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[3]);
 			Py=-Pcy*(2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[2]+2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[3]);
 			Pz=-Pcz*(1-2*robot_transforms[7].rotation[0]*robot_transforms[7].rotation[0]-2*robot_transforms[7].rotation[1]*robot_transforms[7].rotation[1]);
 
-			Px=-Px; //Xpoignet et Xcapteur inversés
-			Py=-Py; //Ypoignet et Ycapteur inversés
+			Px=-Px; //Xwrist & Xsensor are in opposite directions
+			Py=-Py; //Ywrist & Ysensor are in opposite directions
+
+			//std::cout << "P = "<< P << " Px = " << Px << " Py = " << Py << "Pz = " << Pz << " Gx = "<< Gx << " Gy = " << Gy << " Gz = "<< Gz <<std::endl;
 		}
 	}
 
 	/* rtnet */
+	/* Receiving the response. */
 	rt_dev_recv(socketHandle, (char *)response, 36, 0 );
 
-	/* Receiving the response. */
-	/*recv( socketHandle, (char *)response, 36, 0 );*/
 	resp.rdt_sequence = ntohl(*(unsigned int*)&response[0]);
 	resp.ft_sequence = ntohl(*(unsigned int*)&response[4]);
 	resp.status = ntohl(*(unsigned int*)&response[8]);
@@ -198,12 +163,7 @@ void ATISensor::updateHook(){
 		resp.FTData[i] = ntohl(*(int*)&response[12 + i * 4]);
 	}
 
-	/* Output the response data */
-	//printf( "Status: 0x%08x\n", resp.status );
-	/*for (i =0;i < 6;i++) {
-		printf("%s: %d\n", AXES[i], resp.FTData[i]);
-	}*/
-
+	/* Converting to the right units e.g N and Nm */
 	float Fx=(float)resp.FTData[0]/(float)cfgcpf;
 	float Fy=(float)resp.FTData[1]/(float)cfgcpf;
 	float Fz=(float)resp.FTData[2]/(float)cfgcpf;
@@ -217,21 +177,21 @@ void ATISensor::updateHook(){
 		Fx-=Px;
 		Fy-=Py;
 
-		//Fz=Fz-Pz+P; //offset(bias)=-P , compensation= Valeur_lu - Pz dans le repère capteur - offset
-		Fz=Fz-Pz+Pcz;
+		/* uniform density */
+		//Fz=Fz-Pz+P; //offset(bias)=-P , compensation= Value_read - Pz in sensor frame - offset
+		//Tx=Tx-Gy*Pz+Gz*Py+Gy*P;
+		//Ty=Ty+Gx*Pz+Gz*Px-Gx*P;
 
-		/*Tx=Tx-Gy*Pz+Gz*Py+Gy*P;
-		Ty=Ty+Gx*Pz+Gz*Px-Gx*P;*/
+		/* non uniform density */
+		Fz=Fz-Pz+Pcz;
 		Tx=Tx-Gy*Pz+Gz*Py+Gy*Pcz;
                 Ty=Ty+Gx*Pz+Gz*Px-Gx*Pcz;
-
 		Tz=Tz-Gy*Px-Gx*Py;
 	}
 
+	/* Norme of the forces */
 	Fnorm=sqrt(Fx*Fx+Fy*Fy+Fz*Fz);
 
-	std::vector<double> FTvalues;
-	FTvalues.resize(6);
 	FTvalues[0]=Fx;
 	FTvalues[1]=Fy;
 	FTvalues[2]=Fz;
@@ -240,53 +200,49 @@ void ATISensor::updateHook(){
 	FTvalues[5]=Tz;
 
 	oport_FTvalues.write(FTvalues);
-	oport_FTData_Fx.write(Fx);
-	oport_FTData_Fy.write(Fy);
-	oport_FTData_Fz.write(Fz);
-	oport_FTData_Tx.write(resp.FTData[3]);
-	oport_FTData_Ty.write(resp.FTData[4]);
-	oport_FTData_Tz.write(resp.FTData[5]);
 	oport_Fnorm.write(Fnorm);
 
-	Eigen::Matrix<double,3,6> calibration_matrix;
-	RTT::FlowStatus calibration_matrix_fs = iport_FT_calibration_data.read(calibration_matrix);
-	if(calibration_matrix_fs == RTT::NewData && !calibration_ended){
-		std::cout<< calibration_matrix(0,0) << " " << calibration_matrix(0,1) << " " << calibration_matrix(0,2) << std::endl;
-		std::cout<< calibration_matrix(1,0) << " " << calibration_matrix(1,1) << " " << calibration_matrix(1,2) << std::endl;
-		std::cout<< calibration_matrix(2,0) << " " << calibration_matrix(2,1) << " " << calibration_matrix(2,2) << std::endl;
+	if(iport_FT_calibration_data.connected()){
+		RTT::FlowStatus calibration_matrix_fs = iport_FT_calibration_data.read(calibration_matrix);
+		if(calibration_matrix_fs == RTT::NewData && !calibration_ended){
+			std::cout<< calibration_matrix(0,0) << " " << calibration_matrix(0,1) << " " << calibration_matrix(0,2) << std::endl;
+			std::cout<< calibration_matrix(1,0) << " " << calibration_matrix(1,1) << " " << calibration_matrix(1,2) << std::endl;
+			std::cout<< calibration_matrix(2,0) << " " << calibration_matrix(2,1) << " " << calibration_matrix(2,2) << std::endl;
 
-		/*P=(std::abs(calibration_matrix(1,0))+std::abs(calibration_matrix(1,2))+std::abs(calibration_matrix(2,1))+std::abs(calibration_matrix(2,2)))/4;
+		/* uniform density */
+		//P=(std::abs(calibration_matrix(1,0))+std::abs(calibration_matrix(1,2))+std::abs(calibration_matrix(2,1))+std::abs(calibration_matrix(2,2)))/4;
+		//Gx=(calibration_matrix(2,4)+std::abs(calibration_matrix(2,5)))/(2*P);
+		//Gy=(-calibration_matrix(1,5)-calibration_matrix(1,3))/(2*P);
+		//Gz=(-Gx*P+Gy*P+calibration_matrix(2,3)+calibration_matrix(1,4))/(2*P);
 
-		Gx=(calibration_matrix(2,4)+std::abs(calibration_matrix(2,5)))/(2*P);
-		Gy=(-calibration_matrix(1,5)-calibration_matrix(1,3))/(2*P);
-		Gz=(-Gx*P+Gy*P+calibration_matrix(2,3)+calibration_matrix(1,4))/(2*P); */
-		Pcx=std::abs(calibration_matrix(1,0));
-		Pcy=std::abs(calibration_matrix(2,1));
-		Pcz=(std::abs(calibration_matrix(1,2))+std::abs(calibration_matrix(2,2)))/2;
+			/* non uniform density */
+			Pcx=std::abs(calibration_matrix(1,0));
+			Pcy=std::abs(calibration_matrix(2,1));
+			Pcz=(std::abs(calibration_matrix(1,2))+std::abs(calibration_matrix(2,2)))/2;
 
-		Gx=((calibration_matrix(2,4)/Pcz)+(std::abs(calibration_matrix(2,5))/Pcy))/2;
-                Gy=((-calibration_matrix(1,5)/Pcx)-(calibration_matrix(1,3)/Pcz))/2;
-                Gz=(((calibration_matrix(1,4)-Gx*Pcz)/Pcx)+((calibration_matrix(2,3)+Gy*Pcz)/Pcy))/2;
+			Gx=((calibration_matrix(2,4)/Pcz)+(std::abs(calibration_matrix(2,5))/Pcy))/2;
+                	Gy=((-calibration_matrix(1,5)/Pcx)-(calibration_matrix(1,3)/Pcz))/2;
+                	Gz=(((calibration_matrix(1,4)-Gx*Pcz)/Pcx)+((calibration_matrix(2,3)+Gy*Pcz)/Pcy))/2;
 
-		calibration_ended=true;
+			calibration_ended=true;
+		}
 	}
 
-  std::cout << "Fnorm = "<< Fnorm << " Fx = " << Fx << " Fy = " << Fy << "Fz = " << Fz << " Tx = "<< Tx << " Ty = " << Ty << " Tz = "<< Tz <<std::endl;
-  std::cout << "P = "<< P << " Px = " << Px << " Py = " << Py << "Pz = " << Pz << " Gx = "<< Gx << " Gy = " << Gy << " Gz = "<< Gz <<std::endl;
-  std::cout << "calibration_ended = "<< calibration_ended << " bias_done = " << bias_done << " bias_asked = " << bias_asked <<std::endl;
+  // std::cerr << Fnorm << " " << Fx << " " << Fy << " " << Fz << " "<< Tx << " " << Ty << " "<< Tz <<std::endl;
+  // RTT::Logger::log()<<RTT::Logger::Info<<" UpdateHook executed " <<RTT::Logger::endl;
+  // std::cout << "Fnorm = "<< Fnorm << " Fx = " << Fx << " Fy = " << Fy << "Fz = " << Fz << " Tx = "<< Tx << " Ty = " << Ty << " Tz = "<< Tz <<std::endl;
+  // std::cout << "P = "<< P << " Px = " << Px << " Py = " << Py << "Pz = " << Pz << " Gx = "<< Gx << " Gy = " << Gy << " Gz = "<< Gz <<std::endl;
+  // std::cout << "calibration_ended = "<< calibration_ended << " bias_done = " << bias_done << " bias_asked = " << bias_asked <<std::endl;
 }
 
 void ATISensor::stopHook() {
 
 	/* stop request getting data sensor */
-	*(unsigned short*)&request[2] = htons(0); // per table 9.1 in Net F/T user manual.
+	*(unsigned short*)&request[2] = htons(0); // stop,  per table 9.1 in Net F/T user manual.
 
 	/* rtnet */
 	 rt_dev_send(socketHandle, (const char *)request, 8, 0 );
 	 rt_dev_close(socketHandle);
-
-	/*send( socketHandle, (const char *)request, 8, 0 );
-	close(socketHandle);*/
 
 	std::cout << "ATISensor executes stopping !" <<std::endl;
 }
